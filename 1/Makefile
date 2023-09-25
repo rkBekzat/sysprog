@@ -4,7 +4,7 @@ all: libcoro.c solution.c
 	gcc $(GCC_FLAGS) libcoro.c solution.c
 
 test:
-	./a.out 3 test1.txt test2.txt test3.txt test4.txt test5.txt test6.txt
+	./a.out 30000 3 test1.txt test2.txt test3.txt test4.txt test5.txt test6.txt
 	python3 checker.py -f result.txt
 
 clean:
