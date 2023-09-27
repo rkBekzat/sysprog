@@ -11,6 +11,8 @@
  * $> ./a.out
  */
 
+typedef unsigned int uint;
+
 struct my_context {
     char *filename;
     int* arr;
