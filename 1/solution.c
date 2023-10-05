@@ -16,13 +16,14 @@ typedef unsigned int uint;
 struct my_context {
     char *filename;
     int* arr;
-    int size;
+    size_t size;
     bool sorted;
 
 };
 
 struct works{
-    struct my_context *files;
+    struct my_context **files;
+    int coro_id;
     int sz;
     uint lat;
 };
@@ -35,29 +36,48 @@ my_context_new(const char *filename)
     ctx->size = 0;
 	ctx->arr = NULL;
     ctx->sorted = false;
+
+
+    FILE *f = fopen(filename, "r");
+
+    for(int next; fscanf(f, "%d", &next) != EOF; )
+        ctx->size++;
+    ctx->arr = (int *) malloc(sizeof (int) * ctx->size);
+
+    fseek(f, SEEK_SET, 0);
+    for(int _i = 0, next; fscanf(f, "%d", &next) != EOF; _i ++)
+        ctx->arr[_i] = next;
+    fclose(f);
+
     return ctx;
 }
 
 static struct  works * works_new(int size, int lat){
     struct works * result = malloc(sizeof (*result));
-    result->files = (struct my_context *)malloc(sizeof (struct my_context)*size);
+    result->files = (struct my_context **)malloc(sizeof (struct my_context *)*size);
     result->sz = size;
     result->lat = (uint)lat;
     return result;
 }
 
 static void
+my_context_delete(struct my_context *ctx) {
+    free(ctx->arr);
+    free(ctx->filename);
+    free(ctx);
+}
+
+static void
 works_delete(struct works *ctx)
 {
-    for(int i = 0; i < ctx->sz; i++){
-        free(ctx->files[i].arr);
-        free(ctx->files[i].filename);
-    }
+    for(int i = 0; i < ctx->sz; i++)
+        my_context_delete(ctx->files[i]);
+    free(ctx->files);
     free(ctx);
 }
 
 
-static void assign(int *arr, int *p1, int *cur, int *p2){
+static void assign(int *arr, int *p1, const int *cur, int *p2){
     arr[*p1] = cur[*p2];
     (*p1)++;
     (*p2)++;
@@ -115,52 +135,52 @@ coroutine_func_f(void *context)
 {
     struct works *ctx = context;
     uint last_update = microtimes();
+
+    struct coro *this = coro_this();
+    printf("Coro %d started\n", ctx->coro_id);
+    uint result_time = 0;
     for(int i = 0; i < ctx->sz; i++){
-        if(ctx->files[i].sorted){
+        if(ctx->files[i] == NULL || ctx->files[i]->sorted){
             continue;
         }
-        char *name = ctx->files[i].filename;
-
-        FILE *f = fopen(name, "r");
-        int next;
-
-        while(fscanf(f, "%d", &next) != EOF){
-            ctx->files[i].size++;
-            ctx->files[i].arr = (int *) realloc(ctx->files[i].arr, sizeof (int) * ctx->files[i].size);
-            ctx->files[i].arr[ctx->files[i].size-1] = next;
-        }
-        sorting(ctx->files[i].arr, 0, ctx->files[i].size);
-        ctx->files[i].sorted = true;
+        printf("%d: switch count %lld\n", ctx->coro_id, coro_switch_count(this));
+        sorting(ctx->files[i]->arr, 0, ctx->files[i]->size);
+        ctx->files[i]->sorted = true;
         if(microtimes()-last_update >= ctx->lat) {
+            printf("%d: yield\n", ctx->coro_id);
+            result_time += microtimes()-last_update;
             coro_yield();
             last_update = microtimes();
         }
     }
+    result_time += microtimes()-last_update;
+    printf("Coroutine %d works %u nanosecond\n", ctx->coro_id, result_time);
 	return 0;
 }
 
-struct my_context  combine(struct my_context * first, struct my_context *second) {
-    struct my_context * answer = my_context_new("result.txt");
-    answer->size = first->size + second->size;
-    answer->arr = (int *) malloc(sizeof (int)*answer->size);
+static void combine(struct my_context * first, struct my_context *second) {
+    size_t size = first->size + second->size;
+    int * arr = (int *) malloc(sizeof (int)*size);
     int position = 0;
     int p1 = 0, p2 = 0;
     while(p1 < first->size || p2 < second->size){
         if(p1 == first->size){
-            assign(answer->arr, &position, second->arr, &p2);
+            assign(arr, &position, second->arr, &p2);
             continue;
         }
         if(p2 == second->size){
-            assign(answer->arr, &position, first->arr, &p1);
+            assign(arr, &position, first->arr, &p1);
             continue;
         }
         if(first->arr[p1] < second->arr[p2]){
-            assign(answer->arr, &position, first->arr, &p1);
+            assign(arr, &position, first->arr, &p1);
         } else {
-            assign(answer->arr, &position, second->arr, &p2);
+            assign(arr, &position, second->arr, &p2);
         }
     }
-    return *answer;
+    free(first->arr);
+    first->size = size;
+    first->arr = arr;
 }
 
 int
@@ -193,9 +213,11 @@ main(int argc, char **argv)
     struct works * data = works_new(num_file, latency);
 
     for(int i = 0; i < num_file; i++){
-        data->files[i] = *my_context_new(argv[i+3]);
+        data->files[i] = my_context_new(argv[i+3]);
     }
+
     for (int i = 0; i < num_cor; ++i) {
+        data[i].coro_id = i;
 		coro_new(coroutine_func_f, data);
     }
     struct coro *c;
@@ -204,12 +226,12 @@ main(int argc, char **argv)
 		coro_delete(c);
 	}
     for(int i = 1; i < num_file; i++){
-        data->files[i] = combine(&data->files[i], &data->files[i-1]);
+        combine(data->files[i], data->files[i-1]);
     }
 
-    FILE *result = fopen(data->files[num_file-1].filename, "w");
-    for(int i = 0; i < data->files[num_file-1].size; i++){
-        fprintf(result, "%d ", data->files[num_file-1].arr[i]);
+    FILE *result = fopen(data->files[num_file-1]->filename, "w");
+    for(int i = 0; i < data->files[num_file-1]->size; i++){
+        fprintf(result, "%d ", data->files[num_file-1]->arr[i]);
     }
 
     works_delete(data);
