@@ -16,7 +16,7 @@ typedef unsigned int uint;
 struct my_context {
     char *filename;
     int* arr;
-    size_t size;
+    int size;
     bool sorted;
 
 };
@@ -159,7 +159,7 @@ coroutine_func_f(void *context)
 }
 
 static void combine(struct my_context * first, struct my_context *second) {
-    size_t size = first->size + second->size;
+    int size = first->size + second->size;
     int * arr = (int *) malloc(sizeof (int)*size);
     int position = 0;
     int p1 = 0, p2 = 0;
@@ -230,7 +230,7 @@ main(int argc, char **argv)
     }
 
     FILE *result = fopen(data->files[num_file-1]->filename, "w");
-    for(int i = 0; i < data->files[num_file-1]->size; i++){
+    for(int  i = 0; i < data->files[num_file-1]->size; i++){
         fprintf(result, "%d ", data->files[num_file-1]->arr[i]);
     }
 
