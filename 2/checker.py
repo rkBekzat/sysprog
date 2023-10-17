@@ -19,71 +19,71 @@ tests = [
 "cd testdir",
 'pwd | tail -c 8',
 '   pwd | tail -c 8',
+],
+[
+"touch \"my file with whitespaces in name.txt\"",
+"ls",
+"echo '123 456 \" str \"'",
+"echo '123 456 \" str \"' > \"my file with whitespaces in name.txt\"",
+"cat my\\ file\\ with\\ whitespaces\\ in\\ name.txt",
+"echo \"test\" >> \"my file with whitespaces in name.txt\"",
+"cat \"my file with whitespaces in name.txt\"",
+"echo 'truncate' > \"my file with whitespaces in name.txt\"",
+"cat \"my file with whitespaces in name.txt\"",
+"echo \"test 'test'' \\\\\" >> \"my file with whitespaces in name.txt\"",
+"cat \"my file with whitespaces in name.txt\"",
+"echo \"4\">file",
+"cat file",
+"echo 100|grep 100",
+],
+[
+"# Comment",
+"echo 123\\\n456",
+],
+[
+"rm my\\ file\\ with\\ whitespaces\\ in\\ name.txt",
+"echo 123 | grep 2",
+"echo 123\\\n456\\\n| grep 2",
+"echo \"123\n456\n7\n\" | grep 4",
+"echo 'source string' | sed 's/source/destination/g'",
+"echo 'source string' | sed 's/source/destination/g' | sed 's/string/value/g'",
+"echo 'source string' |\\\nsed 's/source/destination/g'\\\n| sed 's/string/value/g'",
+"echo 'test' | exit 123 | grep 'test2'",
+"echo 'source string' | sed 's/source/destination/g' | sed 's/string/value/g' > result.txt",
+"cat result.txt",
+"yes bigdata | head -n 100000 | wc -l | tr -d [:blank:]",
+"exit 123 | echo 100",
+"echo 100 | exit 123",
+"printf \"import time\\n\\\n"\
+	"time.sleep(0.1)\\n\\\n"\
+	"f = open('test.txt', 'w')\\n\\\n"\
+	"f.write('Text\\\\\\n')\\n\\\n"\
+	"f.close()\\n\" > test.py",
+"python test.py | exit 0",
+"cat test.txt",
+],
+[
+"false && echo 123",
+"true && echo 123",
+"true || false && echo 123",
+"true || false || true && echo 123",
+"false || echo 123",
+"echo 100 || echo 200",
+"echo 100 && echo 200",
+"echo 100 | grep 1 || echo 200 | grep 2",
+"echo 100 | grep 1 && echo 200 | grep 2",
+],
+[
+"sleep 0.5 && echo 'back sleep is done' &",
+"echo 'next sleep is done'",
+"sleep 0.5",
 ]
-# [
-# "touch \"my file with whitespaces in name.txt\"",
-# "ls",
-# "echo '123 456 \" str \"'",
-# "echo '123 456 \" str \"' > \"my file with whitespaces in name.txt\"",
-# "cat my\\ file\\ with\\ whitespaces\\ in\\ name.txt",
-# "echo \"test\" >> \"my file with whitespaces in name.txt\"",
-# "cat \"my file with whitespaces in name.txt\"",
-# "echo 'truncate' > \"my file with whitespaces in name.txt\"",
-# "cat \"my file with whitespaces in name.txt\"",
-# "echo \"test 'test'' \\\\\" >> \"my file with whitespaces in name.txt\"",
-# "cat \"my file with whitespaces in name.txt\"",
-# "echo \"4\">file",
-# "cat file",
-# "echo 100|grep 100",
-# ],
-# [
-# "# Comment",
-# "echo 123\\\n456",
-# ],
-# [
-# "rm my\\ file\\ with\\ whitespaces\\ in\\ name.txt",
-# "echo 123 | grep 2",
-# "echo 123\\\n456\\\n| grep 2",
-# "echo \"123\n456\n7\n\" | grep 4",
-# "echo 'source string' | sed 's/source/destination/g'",
-# "echo 'source string' | sed 's/source/destination/g' | sed 's/string/value/g'",
-# "echo 'source string' |\\\nsed 's/source/destination/g'\\\n| sed 's/string/value/g'",
-# "echo 'test' | exit 123 | grep 'test2'",
-# "echo 'source string' | sed 's/source/destination/g' | sed 's/string/value/g' > result.txt",
-# "cat result.txt",
-# "yes bigdata | head -n 100000 | wc -l | tr -d [:blank:]",
-# "exit 123 | echo 100",
-# "echo 100 | exit 123",
-# "printf \"import time\\n\\\n"\
-# 	"time.sleep(0.1)\\n\\\n"\
-# 	"f = open('test.txt', 'w')\\n\\\n"\
-# 	"f.write('Text\\\\\\n')\\n\\\n"\
-# 	"f.close()\\n\" > test.py",
-# "python test.py | exit 0",
-# "cat test.txt",
-# ],
-# [
-# "false && echo 123",
-# "true && echo 123",
-# "true || false && echo 123",
-# "true || false || true && echo 123",
-# "false || echo 123",
-# "echo 100 || echo 200",
-# "echo 100 && echo 200",
-# "echo 100 | grep 1 || echo 200 | grep 2",
-# "echo 100 | grep 1 && echo 200 | grep 2",
-# ],
-# [
-# "sleep 0.5 && echo 'back sleep is done' &",
-# "echo 'next sleep is done'",
-# "sleep 0.5",
-# ]
 ]
 
 prefix = '--------------------------------'
 
 def finish(code):
-	# os.system('rm -rf testdir')
+	os.system('rm -rf testdir')
 	sys.exit(code)
 
 def open_new_shell():

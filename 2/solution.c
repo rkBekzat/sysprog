@@ -28,15 +28,6 @@ command_exec(const struct command *cmd) {
     free(args);
 }
 
-void
-show(struct command e) {
-    printf("Command: %s\n Args: ", e.exe);
-    for (int i = 0; i < e.arg_count; i++) {
-        printf("%d %s\n", i, e.args[i]);
-    }
-    printf("\n");
-}
-
 struct tree_node {
     struct tree_node *left;
     struct tree_node *right;
@@ -57,11 +48,6 @@ void node_free(struct tree_node *res) {
     node_free(res->right);
     free(res);
 }
-
-struct command_tree {
-    struct tree_node *root;
-    struct command_tree *next;
-};
 
 struct tree_node *construct_tree(struct expr **expr) {
     struct tree_node *root = NULL;
@@ -84,24 +70,6 @@ struct tree_node *construct_tree(struct expr **expr) {
     }
     return root;
 }
-
-struct command_tree *tree_init(struct command_line *line) {
-    struct command_tree *res = malloc(sizeof(res[0]));
-    res->next = NULL;
-    res->root = NULL;
-    if (line != NULL) {
-        struct expr *e = line->head;
-        res->root = construct_tree(&e);
-    }
-    return res;
-}
-
-void tree_free(struct command_tree *res) {
-    if (res == NULL) return;
-    node_free(res->root);
-    free(res);
-}
-
 
 static int execute_node(struct tree_node *node) {
     int pid1, pid2;
@@ -133,13 +101,17 @@ static int execute_node(struct tree_node *node) {
         waitpid(pid1, NULL, 0);
         waitpid(pid2, NULL, 0);
     } else if (e->type == EXPR_TYPE_AND) {
-        execute_node(node->left);
-        execute_node(node->right);
+        int res = execute_node(node->left);
+        if(res == 0) {
+            return execute_node(node->right);
+        }
+        return res;
     } else if (e->type == EXPR_TYPE_OR) {
         int res = execute_node(node->left);
         if(res != 0){
-            execute_node(node->right);
+            return execute_node(node->right);
         }
+        return res;
     } else if (e->type == EXPR_TYPE_COMMAND) {
         if (strcmp("cd", e->cmd.exe) == 0) {
             if (e->cmd.arg_count != 0)
@@ -153,15 +125,6 @@ static int execute_node(struct tree_node *node) {
         assert(false);
     }
     return 0;
-}
-
-static int execute_command_line(struct command_tree *tree) {
-    int result = 0;
-    while (!result && tree != NULL) {
-        result = execute_node(tree->root);
-        tree = tree->next;
-    }
-    return result;
 }
 
 static int
@@ -184,9 +147,9 @@ execute_out_type(struct command_line *line) {
         assert(false);
     }
 
-    struct command_tree *tree = tree_init(line);
-    result = execute_command_line(tree);
-    tree_free(tree);
+    struct tree_node *tree = construct_tree(&line->head);
+    result = execute_node(tree);
+    node_free(tree);
 
 
     if (line->out_type == OUTPUT_TYPE_FILE_NEW) {
