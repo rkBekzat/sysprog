@@ -32,6 +32,8 @@ struct tree_node {
     struct tree_node *left;
     struct tree_node *right;
     struct expr *expr;
+    int result;
+    int exit;
 };
 
 struct tree_node *node_init() {
@@ -39,6 +41,8 @@ struct tree_node *node_init() {
     res->left = NULL;
     res->right = NULL;
     res->expr = NULL;
+    res->result = 0;
+    res->expr = 0;
     return res;
 }
 
@@ -75,6 +79,7 @@ static int execute_node(struct tree_node *node) {
     int pid1, pid2;
     int fd[2];
     const struct expr *e = node->expr;
+    node->exit = 0;
     if (e->type == EXPR_TYPE_PIPE) {
         pipe(fd);
 
@@ -92,7 +97,7 @@ static int execute_node(struct tree_node *node) {
             close(fd[1]);
             dup2(fd[0], STDIN_FILENO);
             close(fd[0]);
-            execute_node(node->right);
+            node->result = execute_node(node->right);
             exit(0);
         }
 
@@ -101,37 +106,39 @@ static int execute_node(struct tree_node *node) {
         waitpid(pid1, NULL, 0);
         waitpid(pid2, NULL, 0);
     } else if (e->type == EXPR_TYPE_AND) {
-        int res = execute_node(node->left);
-        if(res == 0) {
-            return execute_node(node->right);
+        node->result = execute_node(node->left);
+        if(node->result == 0) {
+            node->result = execute_node(node->right);
         }
-        return res;
     } else if (e->type == EXPR_TYPE_OR) {
-        int res = execute_node(node->left);
-        if(res != 0){
-            return execute_node(node->right);
+        node->result = execute_node(node->left);
+        if(node->result != 0){
+            node->result = execute_node(node->right);
         }
-        return res;
     } else if (e->type == EXPR_TYPE_COMMAND) {
         if (strcmp("cd", e->cmd.exe) == 0) {
             if (e->cmd.arg_count != 0)
                 chdir(e->cmd.args[0]);
         } else if (strcmp("exit", e->cmd.exe) == 0) {
-            return 1;
+            node->exit = 1;
+            if(e->cmd.arg_count > 0){
+                node->result = atoi(e->cmd.args[0]);
+            }
         } else {
             command_exec(&e->cmd);
         }
     } else {
         assert(false);
     }
-    return 0;
+    return node->result;
 }
 
+static int program_result = 0;
 static int
 execute_out_type(struct command_line *line) {
 
     assert(line != NULL);
-    int result;
+    int exit;
     int file;
     int io;
 
@@ -148,7 +155,9 @@ execute_out_type(struct command_line *line) {
     }
 
     struct tree_node *tree = construct_tree(&line->head);
-    result = execute_node(tree);
+    execute_node(tree);
+    exit = tree->exit;
+    program_result = tree->result;
     node_free(tree);
 
 
@@ -163,7 +172,7 @@ execute_out_type(struct command_line *line) {
         close(io);
     }
 
-    return result;
+    return exit;
 }
 
 int
@@ -190,5 +199,5 @@ main(void) {
         }
     }
     parser_delete(p);
-    return 0;
+    return program_result;
 }
