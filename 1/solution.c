@@ -31,10 +31,10 @@ struct works{
 static struct my_context *
 my_context_new(const char *filename)
 {
-	struct my_context *ctx = malloc(sizeof(*ctx));
-	ctx->filename = strdup(filename);
+    struct my_context *ctx = malloc(sizeof(*ctx));
+    ctx->filename = strdup(filename);
     ctx->size = 0;
-	ctx->arr = NULL;
+    ctx->arr = NULL;
     ctx->sorted = false;
 
 
@@ -155,7 +155,7 @@ coroutine_func_f(void *context)
     }
     result_time += microtimes()-last_update;
     printf("Coroutine %d works %u nanosecond\n", ctx->coro_id, result_time);
-	return 0;
+    return 0;
 }
 
 static void combine(struct my_context * first, struct my_context *second) {
@@ -217,14 +217,14 @@ main(int argc, char **argv)
     }
 
     for (int i = 0; i < num_cor; ++i) {
-        data[i].coro_id = i;
-		coro_new(coroutine_func_f, data);
+        data->coro_id = i;
+        coro_new(coroutine_func_f, data);
     }
     struct coro *c;
-	while ((c = coro_sched_wait()) != NULL) {
-		printf("Finished %d\n", coro_status(c));
-		coro_delete(c);
-	}
+    while ((c = coro_sched_wait()) != NULL) {
+        printf("Finished %d\n", coro_status(c));
+        coro_delete(c);
+    }
     for(int i = 1; i < num_file; i++){
         combine(data->files[i], data->files[i-1]);
     }
@@ -239,5 +239,5 @@ main(int argc, char **argv)
 
     uint end = microtimes();
     printf("Total execution time: %llu\n", (long long) (end-start));
-	return 0;
+    return 0;
 }
