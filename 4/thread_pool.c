@@ -1,6 +1,7 @@
 #include "thread_pool.h"
 #include <pthread.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 struct thread_task {
 	thread_task_f function;
@@ -86,6 +87,7 @@ thread_pool_new(int max_thread_count, struct thread_pool **pool)
     struct thread_pool *new_pool = malloc(sizeof (struct thread_pool));
     if(!new_pool)
         return -1;
+    new_pool->threads = malloc(TPOOL_MAX_THREADS * sizeof (pthread_t));
     new_pool->max_threads = max_thread_count;
     new_pool->cnt_threads = 0;
     new_pool->run_threads = 0;
@@ -152,9 +154,9 @@ thread_pool_push_task(struct thread_pool *pool, struct thread_task *task)
     task->joined = false;
     task->delete = false;
     pthread_mutex_unlock(task->task_mutex);
-    if(pool->cnt_threads < pool->max_threads && pool->run_threads == pool->cnt_threads){}
-        pthread_create(&pool->threads[pool->cnt_threads++], NULL, tpool_worker,  pool);
-
+    if(pool->cnt_threads < pool->max_threads && pool->run_threads == pool->cnt_threads) {
+        pthread_create(&pool->threads[pool->cnt_threads++], NULL, tpool_worker, pool);
+    }
     pthread_mutex_unlock(pool->mutex);
     pthread_cond_signal(pool->cond);
     return 0;
@@ -172,7 +174,10 @@ thread_task_new(struct thread_task **task, thread_task_f function, void *arg)
     (*task)->joined = false;
     (*task)->pushed = false;
 
+    (*task)->task_mutex = malloc(sizeof (pthread_mutex_t));
     pthread_mutex_init((*task)->task_mutex, NULL);
+
+    (*task)->task_cond = malloc(sizeof (pthread_cond_t));
     pthread_cond_init((*task)->task_cond, NULL);
 	return 0;
 }
