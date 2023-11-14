@@ -80,7 +80,7 @@ void * tpool_worker(void *arg){
 int
 thread_pool_new(int max_thread_count, struct thread_pool **pool)
 {
-    if(max_thread_count > TPOOL_MAX_THREADS || max_thread_count < 0)
+    if(max_thread_count > TPOOL_MAX_THREADS || max_thread_count <= 0)
         return TPOOL_ERR_INVALID_ARGUMENT;
 
     struct thread_pool *new_pool = malloc(sizeof (struct thread_pool));
