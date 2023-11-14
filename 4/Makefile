@@ -1,4 +1,4 @@
-GCC_FLAGS = -O0 -ggdb -Wextra -Werror -Wall -Wno-gnu-folding-constant -pthread
+GCC_FLAGS = -Wextra -Werror -Wall -Wno-gnu-folding-constant -pthread
 
 all: test.o thread_pool.o
 	gcc $(GCC_FLAGS) test.o thread_pool.o
