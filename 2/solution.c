@@ -9,7 +9,7 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 
-void
+int
 command_exec(const struct command *cmd) {
     char **args = malloc(sizeof(char *) * (cmd->arg_count + 2));
     args[0] = cmd->exe;
@@ -18,14 +18,20 @@ command_exec(const struct command *cmd) {
     }
     args[cmd->arg_count + 1] = NULL;
 
+    int status;
+    int code=0;
     pid_t pid = fork();
     if (pid == 0) {
         execvp(cmd->exe, args);
         exit(0);
     } else
-        waitpid(pid, NULL, 0);
+        waitpid(pid, &status, WUNTRACED);
 
+    if(WIFEXITED(status)) {
+        code = WEXITSTATUS(status);
+    }
     free(args);
+    return code;
 }
 
 struct tree_node {
@@ -76,7 +82,7 @@ struct tree_node *construct_tree(struct expr **expr) {
 }
 
 static int execute_node(struct tree_node *node) {
-    int pid1, pid2;
+    int pid1, pid2, status;
     int fd[2];
     const struct expr *e = node->expr;
     node->exit = 0;
@@ -88,6 +94,7 @@ static int execute_node(struct tree_node *node) {
             close(fd[0]);
             dup2(fd[1], STDOUT_FILENO);
             close(fd[1]);
+
             execute_node(node->left);
             exit(0);
         }
@@ -98,22 +105,31 @@ static int execute_node(struct tree_node *node) {
             dup2(fd[0], STDIN_FILENO);
             close(fd[0]);
             node->result = execute_node(node->right);
-            exit(0);
+            exit(node->result);
         }
 
-        close(fd[1]);
         close(fd[0]);
+        close(fd[1]);
         waitpid(pid1, NULL, 0);
-        waitpid(pid2, NULL, 0);
+        waitpid(pid2, &status, WUNTRACED);
+        node->result = WEXITSTATUS(status);
     } else if (e->type == EXPR_TYPE_AND) {
         node->result = execute_node(node->left);
+        node->exit = node->left->exit;
+        if (node->exit) return node->result;
         if(node->result == 0) {
             node->result = execute_node(node->right);
+            node->exit = node->right->exit;
+            if (node->exit) return node->result;
         }
     } else if (e->type == EXPR_TYPE_OR) {
         node->result = execute_node(node->left);
+        node->exit = node->left->exit;
+        if (node->exit) return node->result;
         if(node->result != 0){
             node->result = execute_node(node->right);
+            node->exit = node->right->exit;
+            if (node->exit) return node->result;
         }
     } else if (e->type == EXPR_TYPE_COMMAND) {
         if (strcmp("cd", e->cmd.exe) == 0) {
@@ -125,7 +141,7 @@ static int execute_node(struct tree_node *node) {
                 node->result = atoi(e->cmd.args[0]);
             }
         } else {
-            command_exec(&e->cmd);
+            node->result = command_exec(&e->cmd);
         }
     } else {
         assert(false);
