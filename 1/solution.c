@@ -23,10 +23,21 @@ struct my_context {
 
 struct works{
     struct my_context **files;
-    int coro_id;
     int sz;
     uint lat;
 };
+
+struct coro_data{
+    struct works *data;
+    int coro_id;
+};
+
+static struct coro_data * coro_data_new(struct works * data, int id) {
+    struct coro_data *ctx = malloc(sizeof (*ctx));
+    ctx->coro_id = id;
+    ctx->data = data;
+    return ctx;
+}
 
 static struct my_context *
 my_context_new(const char *filename)
@@ -58,6 +69,10 @@ static struct  works * works_new(int size, int lat){
     result->sz = size;
     result->lat = (uint)lat;
     return result;
+}
+
+static void coro_data_delete(struct  coro_data *ctx){
+    free(ctx);
 }
 
 static void
@@ -133,28 +148,30 @@ uint microtimes() {
 static int
 coroutine_func_f(void *context)
 {
-    struct works *ctx = context;
+    struct coro_data *coro_ctx = context;
+    struct works *ctx = coro_ctx->data;
     uint last_update = microtimes();
 
     struct coro *this = coro_this();
-    printf("Coro %d started\n", ctx->coro_id);
+    printf("Coro %d started\n", coro_ctx->coro_id);
     uint result_time = 0;
     for(int i = 0; i < ctx->sz; i++){
         if(ctx->files[i] == NULL || ctx->files[i]->sorted){
             continue;
         }
-        printf("%d: switch count %lld\n", ctx->coro_id, coro_switch_count(this));
+        printf("%d: switch count %lld\n", coro_ctx->coro_id, coro_switch_count(this));
         sorting(ctx->files[i]->arr, 0, ctx->files[i]->size);
         ctx->files[i]->sorted = true;
         if(microtimes()-last_update >= ctx->lat) {
-            printf("%d: yield\n", ctx->coro_id);
+            printf("%d: yield\n", coro_ctx->coro_id);
             result_time += microtimes()-last_update;
             coro_yield();
             last_update = microtimes();
         }
     }
     result_time += microtimes()-last_update;
-    printf("Coroutine %d works %u nanosecond\n", ctx->coro_id, result_time);
+    printf("Coroutine %d works %u nanosecond\n", coro_ctx->coro_id, result_time);
+    coro_data_delete(coro_ctx);
     return 0;
 }
 
@@ -217,8 +234,7 @@ main(int argc, char **argv)
     }
 
     for (int i = 0; i < num_cor; ++i) {
-        data->coro_id = i;
-        coro_new(coroutine_func_f, data);
+        coro_new(coroutine_func_f, coro_data_new(data, i));
     }
     struct coro *c;
     while ((c = coro_sched_wait()) != NULL) {
