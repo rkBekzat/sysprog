@@ -201,6 +201,7 @@ test_io(void)
 			break;
 		progress += rc;
 	}
+
 	unit_check(progress == some_size, "read big data in parts");
 	ufs_close(fd1);
 	bool ok = true;

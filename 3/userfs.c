@@ -194,6 +194,14 @@ struct block * new_block(){
     return ptr;
 }
 
+void print_block_list(struct block * cur){
+    if(cur == NULL){
+        return ;
+    }
+    printf("BLOCK: %s \n", cur->memory);
+    print_block_list(cur->next);
+}
+
 ssize_t
 ufs_write(int fd, const char *buf, size_t size)
 {
@@ -205,7 +213,7 @@ ufs_write(int fd, const char *buf, size_t size)
     struct filedesc *f = file_descriptors[fd];
     struct block *ptr = f->file->block_list;
     size_t _size = 0, add = 0, temp = 0;
-//    printf("START WRITE: %ld\n", f->pos);
+//    printf("BEFORE POS: %zu\n", f->pos);
     if(ptr != NULL) {
         while (_size < f->pos) {
             add = f->pos - _size;
@@ -219,24 +227,29 @@ ufs_write(int fd, const char *buf, size_t size)
         ptr = new_block();
         f->file->block_list = ptr;
     }
-
+//    printf("AFTER POS: %zu\n", f->pos);
     _size = 0;
     while(_size < size){
         temp = BLOCK_SIZE - add % BLOCK_SIZE;
         if(temp > size - _size) temp = size-_size;
         memcpy(ptr->memory+add, buf+_size, temp);
         _size += temp;
-        if(ptr->next == NULL && temp == BLOCK_SIZE){
+        if(ptr->next == NULL){
             ptr->next = new_block();
             ptr->next->prev = ptr;
         }
-        if (ptr->occupied < (int)((temp + f->pos) % BLOCK_SIZE)) {
-            ptr->occupied = (int)((temp + f->pos) % BLOCK_SIZE);
+        if (ptr->occupied < (int)(temp + add)) {
+            ptr->occupied = (int)(temp + add);
         }
         ptr = ptr->next;
         add = 0;
     }
     f->pos += _size;
+//    printf("Write DATA: %zuz \n", _size);
+//    struct block *b = f->file->block_list;
+//    printf("SHOW BLOCK:\n");
+//    print_block_list(b);
+//    printf("NEXT\n");
     return (ssize_t) _size;
 }
 
@@ -251,6 +264,12 @@ ufs_read(int fd, char *buf, size_t size)
     struct filedesc *f =file_descriptors[fd];
     struct block *ptr = f->file->block_list;
 
+//    struct block *b = f->file->block_list;
+//    printf("SHOW BLOCK:\n");
+//    print_block_list(b);
+//    printf("NEXT\n");
+
+//    printf("BEFORE POS: %zu\n", f->pos);
     size_t _size=0, add=0, temp=0;
     while (_size < f->pos) {
         add = f->pos - _size;
@@ -259,6 +278,7 @@ ufs_read(int fd, char *buf, size_t size)
         if(add == BLOCK_SIZE) ptr = ptr->next;
         if(_size == f->pos) break;
     }
+//    printf("AFTER POS: %zu\n", f->pos);
     _size = 0;
     while(_size < size && ptr != NULL){
         temp = ptr->occupied - add % BLOCK_SIZE;
@@ -267,13 +287,13 @@ ufs_read(int fd, char *buf, size_t size)
         if(temp == 0) break;
 
 //        printf("STRING: %s\n", ptr->memory + add % BLOCK_SIZE );
-        memcpy(buf+_size, ptr->memory + add %BLOCK_SIZE, temp);
+        memcpy(buf+_size, ptr->memory + add, temp);
         _size += temp;
         ptr = ptr->next;
         add=0;
     }
     f->pos += _size;
-//    printf("END WITH: %ld %ld \n", f->pos, _size);
+//    printf("DATA: %zu \n", _size);
     return (ssize_t) _size;
 }
 
