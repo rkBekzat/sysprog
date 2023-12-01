@@ -136,7 +136,8 @@ void to_yield(struct coro_data *ctx){
     struct timespec current;
     clock_gettime(CLOCK_MONOTONIC, &current);
     if(to_ms(current) - to_ms(ctx->start) > ctx->data->lat) {
-//        printf("%d: yield\n", ctx->coro_id);
+        printf("%d: switch count %lld\n", ctx->coro_id, coro_switch_count(coro_this()));
+        printf("%d: yield\n", ctx->coro_id);
         ctx->total_time += (to_ms(current) - to_ms(ctx->start));
         coro_yield();
         clock_gettime(CLOCK_MONOTONIC, &ctx->start);
