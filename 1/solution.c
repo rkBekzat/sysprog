@@ -11,7 +11,8 @@
  * $> ./a.out
  */
 
-typedef unsigned int uint;
+
+typedef unsigned long long ull;
 
 struct my_context {
     char *filename;
@@ -24,12 +25,15 @@ struct my_context {
 struct works{
     struct my_context **files;
     int sz;
-    uint lat;
+    ull lat;
 };
 
 struct coro_data{
     struct works *data;
     int coro_id;
+
+    struct timespec start;
+    ull total_time;
 };
 
 static struct coro_data * coro_data_new(struct works * data, int id) {
@@ -67,7 +71,7 @@ static struct  works * works_new(int size, int lat){
     struct works * result = malloc(sizeof (*result));
     result->files = (struct my_context **)malloc(sizeof (struct my_context *)*size);
     result->sz = size;
-    result->lat = (uint)lat;
+    result->lat = (ull)lat;
     return result;
 }
 
@@ -124,53 +128,65 @@ static void merge(int *arr, int l, int r) {
     free(answer);
 }
 
+ull to_ms(struct timespec tm){
+    return (ull) tm.tv_sec*1000000+(ull)tm.tv_nsec/1000;
+}
+
+void to_yield(struct coro_data *ctx){
+    struct timespec current;
+    clock_gettime(CLOCK_MONOTONIC, &current);
+    if(to_ms(current) - to_ms(ctx->start) > ctx->data->lat) {
+//        printf("%d: yield\n", ctx->coro_id);
+        ctx->total_time += (to_ms(current) - to_ms(ctx->start));
+        coro_yield();
+        clock_gettime(CLOCK_MONOTONIC, &ctx->start);
+    }
+}
+
+
 static void
-sorting(int *arr, int l, int r) {
+sorting(struct coro_data *ctx, int *arr, int l, int r) {
     if(r==l){
         return ;
     }
     int mid = (l+r) / 2;
-    sorting(arr, l, mid);
-    sorting(arr, mid+1, r);
-
+    sorting(ctx, arr, l, mid);
+    to_yield(ctx);
+    sorting(ctx, arr, mid+1, r);
+    to_yield(ctx);
     merge(arr, l, r);
 }
-
-
-uint microtimes() {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    uint s = (uint) ts.tv_sec*100000+(uint)ts.tv_nsec/1000;
-    return s;
-}
-
 
 static int
 coroutine_func_f(void *context)
 {
     struct coro_data *coro_ctx = context;
     struct works *ctx = coro_ctx->data;
-    uint last_update = microtimes();
-
     struct coro *this = coro_this();
     printf("Coro %d started\n", coro_ctx->coro_id);
-    uint result_time = 0;
+
+    coro_ctx->total_time = (ull)0;
+    clock_gettime(CLOCK_MONOTONIC, &coro_ctx->start);
+
     for(int i = 0; i < ctx->sz; i++){
         if(ctx->files[i] == NULL || ctx->files[i]->sorted){
             continue;
         }
         printf("%d: switch count %lld\n", coro_ctx->coro_id, coro_switch_count(this));
-        sorting(ctx->files[i]->arr, 0, ctx->files[i]->size);
         ctx->files[i]->sorted = true;
-        if(microtimes()-last_update >= ctx->lat) {
-            printf("%d: yield\n", coro_ctx->coro_id);
-            result_time += microtimes()-last_update;
-            coro_yield();
-            last_update = microtimes();
-        }
+
+        printf("%d: yield\n", coro_ctx->coro_id);
+        coro_yield();
+        clock_gettime(CLOCK_MONOTONIC, &coro_ctx->start);
+
+        sorting(coro_ctx, ctx->files[i]->arr, 0, ctx->files[i]->size);
+
+        to_yield(coro_ctx);
     }
-    result_time += microtimes()-last_update;
-    printf("Coroutine %d works %u nanosecond\n", coro_ctx->coro_id, result_time);
+    struct timespec cur;
+    clock_gettime(CLOCK_MONOTONIC, &cur);
+    coro_ctx->total_time += to_ms(cur) - to_ms(coro_ctx->start);
+    printf("Coroutine %d works %llu microsecond\n", coro_ctx->coro_id, coro_ctx->total_time);
     coro_data_delete(coro_ctx);
     return 0;
 }
@@ -212,7 +228,7 @@ main(int argc, char **argv)
     }
 
     int latency;
-    if(!sscanf(argv[1], "%d", &latency) || latency < 1){
+    if(!sscanf(argv[1], "%d", &latency) || latency < 0){
         fprintf(stderr, "LATENCY should be natural");
         exit(1);
     }
@@ -224,7 +240,8 @@ main(int argc, char **argv)
     }
 
     coro_sched_init();
-    uint start = microtimes();
+    struct timespec start;
+    clock_gettime(CLOCK_MONOTONIC, &start);
 
     int num_file = argc - 3;
     struct works * data = works_new(num_file, latency);
@@ -245,7 +262,7 @@ main(int argc, char **argv)
         combine(data->files[i], data->files[i-1]);
     }
 
-    FILE *result = fopen(data->files[num_file-1]->filename, "w");
+    FILE *result = fopen("result.txt", "w");
     for(int  i = 0; i < data->files[num_file-1]->size; i++){
         fprintf(result, "%d ", data->files[num_file-1]->arr[i]);
     }
@@ -253,7 +270,9 @@ main(int argc, char **argv)
     works_delete(data);
     fclose(result);
 
-    uint end = microtimes();
-    printf("Total execution time: %llu\n", (long long) (end-start));
+    struct timespec end;
+    clock_gettime(CLOCK_MONOTONIC, &end);
+
+    printf("Total execution time: %llu microseconds\n",  to_ms(end)-to_ms(start));
     return 0;
 }
