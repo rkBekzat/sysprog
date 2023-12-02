@@ -136,8 +136,8 @@ void to_yield(struct coro_data *ctx){
     struct timespec current;
     clock_gettime(CLOCK_MONOTONIC, &current);
     if(to_ms(current) - to_ms(ctx->start) > ctx->data->lat) {
-        printf("%d: switch count %lld\n", ctx->coro_id, coro_switch_count(coro_this()));
-        printf("%d: yield\n", ctx->coro_id);
+//        printf("%d: switch count %lld\n", ctx->coro_id, coro_switch_count(coro_this()));
+//        printf("%d: yield\n", ctx->coro_id);
         ctx->total_time += (to_ms(current) - to_ms(ctx->start));
         coro_yield();
         clock_gettime(CLOCK_MONOTONIC, &ctx->start);
@@ -173,7 +173,6 @@ coroutine_func_f(void *context)
         if(ctx->files[i] == NULL || ctx->files[i]->sorted){
             continue;
         }
-        printf("%d: switch count %lld\n", coro_ctx->coro_id, coro_switch_count(this));
         ctx->files[i]->sorted = true;
 
         printf("%d: yield\n", coro_ctx->coro_id);
@@ -187,6 +186,7 @@ coroutine_func_f(void *context)
     struct timespec cur;
     clock_gettime(CLOCK_MONOTONIC, &cur);
     coro_ctx->total_time += to_ms(cur) - to_ms(coro_ctx->start);
+    printf("%d: switch count %lld\n", coro_ctx->coro_id, coro_switch_count(this));
     printf("Coroutine %d works %llu microsecond\n", coro_ctx->coro_id, coro_ctx->total_time);
     coro_data_delete(coro_ctx);
     return 0;
