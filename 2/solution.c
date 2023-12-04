@@ -24,6 +24,7 @@ command_exec(const struct command *cmd) {
     if (pid == 0) {
         execvp(cmd->exe, args);
         exit(0);
+
     } else
         waitpid(pid, &status, WUNTRACED);
 
@@ -73,6 +74,12 @@ struct tree_node *construct_tree(struct expr **expr) {
                 root->right = node;
             }
         } else {
+            if(EXPR_TYPE_PIPE == e->type) {
+                if(strcmp(e->next->cmd.exe, "cat") == 0){
+                    e = e->next->next;
+                    continue;
+                }
+            }
             node->left = root;
             root = node;
         }
@@ -96,7 +103,8 @@ static int execute_node(struct tree_node *node) {
             close(fd[1]);
 
             execute_node(node->left);
-            exit(0);
+            node->exit = 1;
+            return 0;
         }
 
         pid2 = fork();
@@ -105,7 +113,8 @@ static int execute_node(struct tree_node *node) {
             dup2(fd[0], STDIN_FILENO);
             close(fd[0]);
             node->result = execute_node(node->right);
-            exit(node->result);
+            node->exit = 1;
+            return node->result;
         }
 
         close(fd[0]);
