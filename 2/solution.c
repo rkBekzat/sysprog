@@ -131,7 +131,7 @@ static int execute_node(struct tree_node *node, struct  all_pointer *a) {
             close(fd[0]);
             node->result = execute_node(node->right, a);
             all_free(a);
-            exit(0);
+            exit(node->result);
         }
 
         close(fd[0]);
