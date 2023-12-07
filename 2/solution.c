@@ -9,8 +9,37 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 
+struct tree_node {
+    struct tree_node *left;
+    struct tree_node *right;
+    struct expr *expr;
+    int result;
+    int exit;
+};
+
+
+struct all_pointer{
+    struct parser * p;
+    struct command_line *l;
+    struct tree_node* t;
+};
+
+
+void node_free(struct tree_node *res) {
+    if (res == NULL) return;
+    node_free(res->left);
+    node_free(res->right);
+    free(res);
+}
+
+void all_free(struct all_pointer *a){
+    parser_delete(a->p);
+    command_line_delete(a->l);
+    node_free(a->t);
+}
+
 int
-command_exec(const struct command *cmd) {
+command_exec(const struct command *cmd, struct all_pointer *a) {
     char **args = malloc(sizeof(char *) * (cmd->arg_count + 2));
     args[0] = cmd->exe;
     for (int i = 0; i < cmd->arg_count; i++) {
@@ -23,8 +52,9 @@ command_exec(const struct command *cmd) {
     pid_t pid = fork();
     if (pid == 0) {
         execvp(cmd->exe, args);
+        free(args);
+        all_free(a);
         exit(0);
-
     } else
         waitpid(pid, &status, WUNTRACED);
 
@@ -34,14 +64,6 @@ command_exec(const struct command *cmd) {
     free(args);
     return code;
 }
-
-struct tree_node {
-    struct tree_node *left;
-    struct tree_node *right;
-    struct expr *expr;
-    int result;
-    int exit;
-};
 
 struct tree_node *node_init() {
     struct tree_node *res = malloc(sizeof(res[0]));
@@ -53,12 +75,6 @@ struct tree_node *node_init() {
     return res;
 }
 
-void node_free(struct tree_node *res) {
-    if (res == NULL) return;
-    node_free(res->left);
-    node_free(res->right);
-    free(res);
-}
 
 struct tree_node *construct_tree(struct expr **expr) {
     struct tree_node *root = NULL;
@@ -77,6 +93,7 @@ struct tree_node *construct_tree(struct expr **expr) {
             if(EXPR_TYPE_PIPE == e->type) {
                 if(strcmp(e->next->cmd.exe, "cat") == 0){
                     e = e->next->next;
+                    node_free(node);
                     continue;
                 }
             }
@@ -88,7 +105,7 @@ struct tree_node *construct_tree(struct expr **expr) {
     return root;
 }
 
-static int execute_node(struct tree_node *node) {
+static int execute_node(struct tree_node *node, struct  all_pointer *a) {
     int pid1, pid2, status;
     int fd[2];
     const struct expr *e = node->expr;
@@ -102,9 +119,9 @@ static int execute_node(struct tree_node *node) {
             dup2(fd[1], STDOUT_FILENO);
             close(fd[1]);
 
-            execute_node(node->left);
-            node->exit = 1;
-            return 0;
+            execute_node(node->left, a);
+            all_free(a);
+            exit(0);
         }
 
         pid2 = fork();
@@ -112,9 +129,9 @@ static int execute_node(struct tree_node *node) {
             close(fd[1]);
             dup2(fd[0], STDIN_FILENO);
             close(fd[0]);
-            node->result = execute_node(node->right);
-            node->exit = 1;
-            return node->result;
+            node->result = execute_node(node->right, a);
+            all_free(a);
+            exit(0);
         }
 
         close(fd[0]);
@@ -123,20 +140,20 @@ static int execute_node(struct tree_node *node) {
         waitpid(pid2, &status, WUNTRACED);
         node->result = WEXITSTATUS(status);
     } else if (e->type == EXPR_TYPE_AND) {
-        node->result = execute_node(node->left);
+        node->result = execute_node(node->left, a);
         node->exit = node->left->exit;
         if (node->exit) return node->result;
         if(node->result == 0) {
-            node->result = execute_node(node->right);
+            node->result = execute_node(node->right, a);
             node->exit = node->right->exit;
             if (node->exit) return node->result;
         }
     } else if (e->type == EXPR_TYPE_OR) {
-        node->result = execute_node(node->left);
+        node->result = execute_node(node->left, a);
         node->exit = node->left->exit;
         if (node->exit) return node->result;
         if(node->result != 0){
-            node->result = execute_node(node->right);
+            node->result = execute_node(node->right, a);
             node->exit = node->right->exit;
             if (node->exit) return node->result;
         }
@@ -150,7 +167,7 @@ static int execute_node(struct tree_node *node) {
                 node->result = atoi(e->cmd.args[0]);
             }
         } else {
-            node->result = command_exec(&e->cmd);
+            node->result = command_exec(&e->cmd, a);
         }
     } else {
         assert(false);
@@ -158,9 +175,8 @@ static int execute_node(struct tree_node *node) {
     return node->result;
 }
 
-static int program_result = 0;
 static int
-execute_out_type(struct command_line *line) {
+execute_out_type(struct command_line *line, int * program_result, struct all_pointer* a) {
 
     assert(line != NULL);
     int exit;
@@ -180,9 +196,10 @@ execute_out_type(struct command_line *line) {
     }
 
     struct tree_node *tree = construct_tree(&line->head);
-    execute_node(tree);
+    (*a).t = tree;
+    execute_node(tree, a);
     exit = tree->exit;
-    program_result = tree->result;
+    *program_result = tree->result;
     node_free(tree);
 
 
@@ -206,12 +223,16 @@ main(void) {
     char buf[buf_size];
     int rc;
     int exit = 0;
+    int program_result = 0;
     struct parser *p = parser_new();
+    struct all_pointer a;
+    a.p = p;
     while (!exit && (rc = read(STDIN_FILENO, buf, buf_size)) > 0) {
         parser_feed(p, buf, rc);
         struct command_line *line = NULL;
         while (true) {
             enum parser_error err = parser_pop_next(p, &line);
+            a.l = line;
             if (err == PARSER_ERR_NONE && line == NULL)
                 break;
             if (err != PARSER_ERR_NONE) {
@@ -219,7 +240,7 @@ main(void) {
                 continue;
             }
 //            printf("head : %s (%s)\ntail : %s(%s)\n",line->head->cmd.exe,line->head->cmd.args[0],line->tail->cmd.exe,line->head->cmd.args[0]);
-            exit = execute_out_type(line);
+            exit = execute_out_type(line, &program_result, &a);
             command_line_delete(line);
         }
     }
