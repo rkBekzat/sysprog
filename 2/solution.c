@@ -42,7 +42,7 @@ int
 command_exec(const struct command *cmd, struct all_pointer *a) {
     char **args = malloc(sizeof(char *) * (cmd->arg_count + 2));
     args[0] = cmd->exe;
-    for (int i = 0; i < cmd->arg_count; i++) {
+    for (uint32_t i = 0; i < cmd->arg_count; i++) {
         args[i + 1] = cmd->args[i];
     }
     args[cmd->arg_count + 1] = NULL;
