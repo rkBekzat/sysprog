@@ -34,6 +34,7 @@ enum open_flags {
 	 */
 	UFS_CREATE = 1,
 
+#define NEED_OPEN_FLAGS
 #ifdef NEED_OPEN_FLAGS
 
 	/**
@@ -137,6 +138,7 @@ ufs_close(int fd);
 int
 ufs_delete(const char *filename);
 
+#define NEED_RESIZE
 #ifdef NEED_RESIZE
 
 /**

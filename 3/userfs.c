@@ -148,13 +148,6 @@ void filedesc_make_free(int fd){
     file_descriptors[fd]->flag = 0;
     file_descriptor_count--;
 
-    if (file_descriptor_count == 0) {
-        for (int i = 0; i < file_descriptor_capacity; i++)
-            free(file_descriptors[i]);
-        file_descriptor_capacity = 0;
-        free(file_descriptors);
-        file_descriptors = NULL;
-    }
 }
 
 enum ufs_error_code
@@ -194,14 +187,6 @@ struct block * new_block(){
     return ptr;
 }
 
-void print_block_list(struct block * cur){
-    if(cur == NULL){
-        return ;
-    }
-    printf("BLOCK: %s \n", cur->memory);
-    print_block_list(cur->next);
-}
-
 ssize_t
 ufs_write(int fd, const char *buf, size_t size)
 {
@@ -212,44 +197,45 @@ ufs_write(int fd, const char *buf, size_t size)
     }
     struct filedesc *f = file_descriptors[fd];
     struct block *ptr = f->file->block_list;
-    size_t _size = 0, add = 0, temp = 0;
-//    printf("BEFORE POS: %zu\n", f->pos);
-    if(ptr != NULL) {
-        while (_size < f->pos) {
-            add = f->pos - _size;
-            if(add > BLOCK_SIZE) add = BLOCK_SIZE;
-            _size += add;
-            if(add == BLOCK_SIZE) ptr = ptr->next;
-            if(_size == f->pos) break;
-        }
-    } else {
-        // create new block for file
-        ptr = new_block();
-        f->file->block_list = ptr;
+
+    if(f->flag & UFS_READ_ONLY){
+        ufs_error_code = UFS_ERR_NO_PERMISSION;
+        return -1;
     }
-//    printf("AFTER POS: %zu\n", f->pos);
+
+    if(f->pos + size > MAX_FILE_SIZE){
+        ufs_error_code = UFS_ERR_NO_MEM;
+        return -1;
+    }
+
+    size_t _size = 0, temp = 0;
+    for(size_t i = 0; i < f->pos / BLOCK_SIZE; i++){
+        ptr = ptr->next;
+    }
+
     _size = 0;
     while(_size < size){
-        temp = BLOCK_SIZE - add % BLOCK_SIZE;
-        if(temp > size - _size) temp = size-_size;
-        memcpy(ptr->memory+add, buf+_size, temp);
-        _size += temp;
-        if(ptr->next == NULL){
-            ptr->next = new_block();
-            ptr->next->prev = ptr;
+        if(ptr == NULL){
+            ptr = new_block();
+            if(f->file->block_list == NULL){
+                f->file->block_list = ptr;
+            }
+            if(f->file->last_block != NULL){
+                f->file->last_block->next = ptr;
+            }
+            f->file->last_block = ptr;
         }
-        if (ptr->occupied < (int)(temp + add)) {
-            ptr->occupied = (int)(temp + add);
+        temp = BLOCK_SIZE - f->pos % BLOCK_SIZE;
+        if(temp > size - _size) temp = size-_size;
+        memcpy(ptr->memory+f->pos%BLOCK_SIZE, buf+_size, temp);
+        _size += temp;
+
+        if (ptr->occupied < (int)(temp + f->pos % BLOCK_SIZE)) {
+            ptr->occupied = (int)(temp + f->pos % BLOCK_SIZE);
         }
         ptr = ptr->next;
-        add = 0;
+        f->pos += temp;
     }
-    f->pos += _size;
-//    printf("Write DATA: %zuz \n", _size);
-//    struct block *b = f->file->block_list;
-//    printf("SHOW BLOCK:\n");
-//    print_block_list(b);
-//    printf("NEXT\n");
     return (ssize_t) _size;
 }
 
@@ -264,36 +250,26 @@ ufs_read(int fd, char *buf, size_t size)
     struct filedesc *f =file_descriptors[fd];
     struct block *ptr = f->file->block_list;
 
-//    struct block *b = f->file->block_list;
-//    printf("SHOW BLOCK:\n");
-//    print_block_list(b);
-//    printf("NEXT\n");
-
-//    printf("BEFORE POS: %zu\n", f->pos);
-    size_t _size=0, add=0, temp=0;
-    while (_size < f->pos) {
-        add = f->pos - _size;
-        if(add > BLOCK_SIZE) add = BLOCK_SIZE;
-        _size += add;
-        if(add == BLOCK_SIZE) ptr = ptr->next;
-        if(_size == f->pos) break;
+    if(f->flag & UFS_WRITE_ONLY){
+        ufs_error_code = UFS_ERR_NO_PERMISSION;
+        return -1;
     }
-//    printf("AFTER POS: %zu\n", f->pos);
+
+    size_t _size=0, temp=0;
+    for(size_t i = 0; i < f->pos / BLOCK_SIZE; i++){
+        ptr = ptr->next;
+    }
     _size = 0;
     while(_size < size && ptr != NULL){
-        temp = ptr->occupied - add % BLOCK_SIZE;
-//        printf("TEMP: %ld %ld ADD: \n", temp, add);
+        temp = ptr->occupied - f->pos % BLOCK_SIZE;
         if(temp > size - _size) temp = size - _size;
         if(temp == 0) break;
 
-//        printf("STRING: %s\n", ptr->memory + add % BLOCK_SIZE );
-        memcpy(buf+_size, ptr->memory + add, temp);
+        memcpy(buf+_size, ptr->memory + f->pos%BLOCK_SIZE, temp);
         _size += temp;
         ptr = ptr->next;
-        add=0;
+        f->pos += temp;
     }
-    f->pos += _size;
-//    printf("DATA: %zu \n", _size);
     return (ssize_t) _size;
 }
 
@@ -309,6 +285,7 @@ ufs_close(int fd)
     filedesc_make_free(fd);
     return 0;
 }
+
 
 int
 ufs_delete(const char *filename)
@@ -332,4 +309,25 @@ ufs_destroy(void)
     file_descriptor_capacity = 0;
     free(file_descriptors);
     file_descriptors = NULL;
+}
+
+
+int ufs_resize(int fd, size_t new_size){
+    if(is_valid_file(fd)){
+        ufs_error_code = UFS_ERR_NO_FILE;
+        return -1;
+    }
+
+    struct filedesc *f = file_descriptors[fd];
+//    struct block *ptr = f->file->block_list;
+
+    if(f->flag & UFS_READ_ONLY){
+        ufs_error_code = UFS_ERR_NO_PERMISSION;
+        return -1;
+    }
+    if(new_size > MAX_FILE_SIZE){
+        ufs_error_code = UFS_ERR_NO_MEM;
+        return -1;
+    }
+    return 0;
 }
