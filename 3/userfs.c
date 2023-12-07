@@ -177,13 +177,21 @@ ufs_open(const char *filename, int flags)
     return fd;
 }
 
-struct block * new_block(){
+struct block * new_block(struct file *f){
     struct block * ptr;
     ptr = malloc(sizeof(struct block));
     ptr->occupied = 0;
     ptr->memory = malloc(BLOCK_SIZE);
     memset(ptr->memory, 0, BLOCK_SIZE);
-    ptr->next = ptr->prev = NULL;
+    ptr->next = NULL;
+    if(f->block_list == NULL){
+        f->block_list = ptr;
+    }
+    if(f->last_block != NULL){
+        f->last_block->next = ptr;
+        ptr->prev = f->last_block;
+    }
+    f->last_block = ptr;
     return ptr;
 }
 
@@ -207,7 +215,6 @@ ufs_write(int fd, const char *buf, size_t size)
         ufs_error_code = UFS_ERR_NO_MEM;
         return -1;
     }
-
     size_t _size = 0, temp = 0;
     for(size_t i = 0; i < f->pos / BLOCK_SIZE; i++){
         ptr = ptr->next;
@@ -216,14 +223,7 @@ ufs_write(int fd, const char *buf, size_t size)
     _size = 0;
     while(_size < size){
         if(ptr == NULL){
-            ptr = new_block();
-            if(f->file->block_list == NULL){
-                f->file->block_list = ptr;
-            }
-            if(f->file->last_block != NULL){
-                f->file->last_block->next = ptr;
-            }
-            f->file->last_block = ptr;
+            ptr = new_block(f->file);
         }
         temp = BLOCK_SIZE - f->pos % BLOCK_SIZE;
         if(temp > size - _size) temp = size-_size;
@@ -319,7 +319,6 @@ int ufs_resize(int fd, size_t new_size){
     }
 
     struct filedesc *f = file_descriptors[fd];
-//    struct block *ptr = f->file->block_list;
 
     if(f->flag & UFS_READ_ONLY){
         ufs_error_code = UFS_ERR_NO_PERMISSION;
@@ -329,5 +328,40 @@ int ufs_resize(int fd, size_t new_size){
         ufs_error_code = UFS_ERR_NO_MEM;
         return -1;
     }
+
+    struct block *ptr = f->file->block_list;
+    struct block *tmp = NULL;
+    size_t size = 0;
+    while(size < new_size){
+        if(ptr == NULL){
+            ptr = new_block(f->file);
+        }
+        if(BLOCK_SIZE > (int)(new_size - size)){
+            ptr->occupied = (int)(new_size - size);
+            tmp = ptr;
+            ptr = ptr->next;
+            break;
+        }
+        size += BLOCK_SIZE;
+        ptr->occupied = BLOCK_SIZE;
+        tmp = ptr;
+        ptr = ptr->next;
+    }
+    f->file->last_block = tmp;
+    tmp->next = NULL;
+
+    while(ptr != NULL){
+        tmp = ptr->next;
+
+        free(ptr->memory);
+        free(ptr);
+
+        ptr = tmp;
+
+    }
+    for(int i = 0; i < file_descriptor_count; i++)
+        if(file_descriptors[i]->file != NULL && file_descriptors[i]->file->name != NULL &&  strcmp(file_descriptors[i]->file->name, f->file->name) == 0)
+            if(file_descriptors[i]->pos > new_size)
+                file_descriptors[i]->pos = new_size;
     return 0;
 }
