@@ -92,4 +92,4 @@ chat_client_get_events(const struct chat_client *client);
  */
 int
 chat_client_feed(struct chat_client *client, const char *msg,
-		 uint32_t msg_size);
+                 uint32_t msg_size);
