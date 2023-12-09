@@ -1,7 +1,8 @@
 #include "thread_pool.h"
 #include <pthread.h>
-#include <stdlib.h>
 #include <stdio.h>
+#include <malloc.h>
+#include <asm-generic/errno.h>
 
 struct thread_task {
 	thread_task_f function;
@@ -16,56 +17,7 @@ struct thread_task {
     pthread_cond_t  task_cond;
     pthread_mutex_t  task_mutex;
 
-	/* PUT HERE OTHER MEMBERS */
 };
-
-struct tasks_queue {
-    struct thread_task *task;
-    struct tasks_queue *next;
-    struct tasks_queue *last;
-    int cnt;
-};
-
-void create_queue_node(struct tasks_queue ** tq) {
-    (*tq) = malloc(sizeof (struct tasks_queue));
-    (*tq)->next = NULL;
-    (*tq)->last = NULL;
-    (*tq)->cnt = 1;
-}
-
-void queue_push(struct tasks_queue ** tq, struct thread_task *ts){
-    if(*tq == NULL){
-        create_queue_node(&(*tq));
-        (*tq)->task = ts;
-    } else {
-        if((*tq)->next == NULL){
-            create_queue_node(&(*tq)->next);
-            (*tq)->next->task = ts;
-            (*tq)->last = (*tq)->next;
-        } else {
-            struct tasks_queue * tmp = NULL;
-            create_queue_node(&tmp);
-            tmp->task = ts;
-            (*tq)->last->next = tmp;
-            (*tq)->last = tmp;
-        }
-        (*tq)->cnt++;
-    }
-}
-
-void pop_queue(struct tasks_queue ** tq){
-    if(tq == NULL){
-        return ;
-    }
-    if((*tq)->next != NULL){
-        (*tq)->next->last = (*tq)->last;
-        (*tq)->next->cnt = (*tq)->cnt;
-        (*tq) = (*tq)->next;
-        (*tq)->cnt--;
-    } else {
-        (*tq) = NULL;
-    }
-}
 
 struct thread_pool {
 	pthread_t *threads;
@@ -74,14 +26,44 @@ struct thread_pool {
     int run_threads;
     int cnt_threads;
 
-    struct tasks_queue *queue;
+    struct tasks_queue {
+        struct tasks_queue_elm {
+            struct thread_task *task;
+            struct tasks_queue_elm *next;
+        } *first, *last;
+        int cnt;
+    } queue;
 
     pthread_mutex_t mutex;
     pthread_cond_t  cond;
 
     bool shutdown;
-	/* PUT HERE OTHER MEMBERS */
 };
+
+void
+queue_add(struct tasks_queue * tq, struct thread_task *ts)
+{
+    struct tasks_queue_elm *new_elm = malloc(sizeof(new_elm[0]));
+    *new_elm = (struct tasks_queue_elm) {ts, NULL};
+    if (tq->cnt++ == 0)tq->first = tq->last = new_elm;
+    else tq->last = (tq->last->next = new_elm);
+}
+
+struct thread_task *
+queue_pop(struct tasks_queue * tq)
+{
+    if (tq->cnt == 0) return NULL;
+
+    struct tasks_queue_elm *elm = tq->first;
+    struct thread_task *ts = elm->task;
+    tq->cnt--;
+
+    if (tq->cnt == 0) tq->first = tq->last = 0;
+    else tq->first = elm->next;
+
+    free(elm);
+    return ts;
+}
 
 void * tpool_worker(void *arg){
     struct thread_pool * pool = (struct thread_pool *) arg;
@@ -91,7 +73,7 @@ void * tpool_worker(void *arg){
     void *result = NULL;
     while(true){
         pthread_mutex_lock(&pool->mutex);
-        while (pool->queue == NULL && !pool->shutdown){
+        while (pool->queue.cnt == 0 && !pool->shutdown){
             pthread_cond_wait(&pool->cond, &pool->mutex);
         }
 
@@ -99,35 +81,30 @@ void * tpool_worker(void *arg){
             pthread_mutex_unlock(&pool->mutex);
             break;
         }
-        if(pool->queue == NULL) {
-            continue;
+        struct thread_task *task = queue_pop(&pool->queue);
+        if(task != NULL){
+            pool->run_threads++;
         }
-        struct thread_task *task = pool->queue->task;
-        pop_queue(&pool->queue);
-        pool->run_threads++;
         pthread_mutex_unlock(&pool->mutex);
 
-        if(task == NULL) {
-            continue;
+        if(task != NULL) {
+            pthread_mutex_lock(&task->task_mutex);
+            function = task->function;
+            arguments = task->arg;
+            pthread_mutex_unlock(&task->task_mutex);
+
+            result = function(arguments);
+
+            pthread_mutex_lock(&pool->mutex);
+            pool->run_threads--;
+            pthread_mutex_unlock(&pool->mutex);
+
+            pthread_mutex_lock(&task->task_mutex);
+            task->result = result;
+            task->finished = true;
+            pthread_cond_signal(&task->task_cond);
+            pthread_mutex_unlock(&task->task_mutex);
         }
-
-        pthread_mutex_lock(&task->task_mutex);
-        function = task->function;
-        arguments = task->arg;
-        pthread_mutex_unlock(&task->task_mutex);
-
-        result = function(arguments);
-
-        pthread_mutex_lock(&task->task_mutex);
-        task->result = result;
-        task->finished = true;
-
-        pthread_cond_signal(&task->task_cond);
-        pthread_mutex_unlock(&task->task_mutex);
-        pthread_mutex_lock(&pool->mutex);
-        pool->run_threads--;
-        pthread_cond_signal(&pool->cond);
-        pthread_mutex_unlock(&pool->mutex);
     }
     pthread_exit(NULL);
 }
@@ -146,7 +123,7 @@ thread_pool_new(int max_thread_count, struct thread_pool **pool)
     new_pool->cnt_threads = 0;
     new_pool->shutdown = 0;
 
-    new_pool->queue = NULL;
+    new_pool->queue = (struct tasks_queue) {NULL, NULL, 0};
 
     pthread_cond_init(&new_pool->cond, NULL);
     pthread_mutex_init(&new_pool->mutex, NULL);
@@ -166,7 +143,7 @@ int
 thread_pool_delete(struct thread_pool *pool)
 {
     pthread_mutex_lock(&pool->mutex);
-    if(pool->run_threads || pool->queue != NULL){
+    if(pool->run_threads || pool->queue.cnt != 0){
         pthread_mutex_unlock(&pool->mutex);
         return TPOOL_ERR_HAS_TASKS;
     }
@@ -190,11 +167,11 @@ int
 thread_pool_push_task(struct thread_pool *pool, struct thread_task *task)
 {
     pthread_mutex_lock(&pool->mutex);
-    if(pool->queue != NULL && pool->queue->cnt == TPOOL_MAX_TASKS){
+    if(pool->queue.cnt == TPOOL_MAX_TASKS){
         pthread_mutex_unlock(&pool->mutex);
         return TPOOL_ERR_TOO_MANY_TASKS;
     }
-    queue_push(&pool->queue, task);
+    queue_add(&pool->queue, task);
 
     task->pushed = true;
     task->joined = false;
@@ -244,7 +221,7 @@ thread_task_join(struct thread_task *task, void **result)
 {
     if(!task->pushed) return TPOOL_ERR_TASK_NOT_PUSHED;
     pthread_mutex_lock(&task->task_mutex);
-    while(task != NULL && !task->finished){
+    while(!task->finished){
         pthread_cond_wait(&task->task_cond, &task->task_mutex);
     }
     task->joined= true;
@@ -257,7 +234,7 @@ thread_task_join(struct thread_task *task, void **result)
 
 bool bigger(struct timespec *a, struct timespec *b){
     if(a->tv_sec == b->tv_sec){
-        return a->tv_nsec > b->tv_nsec;
+        return a->tv_nsec >= b->tv_nsec;
     } else {
         return a->tv_sec > b->tv_sec;
     }
