@@ -92,13 +92,13 @@ test_push(void)
 	const int count = 1000;
 	struct thread_task **tasks = malloc(sizeof(*tasks) * count);
 	arg = 0;
-	for (int i = 0; i < count; ++i) {
+    for (int i = 0; i < count; ++i) {
 		struct thread_task **tp = &tasks[i];
 		unit_fail_if(thread_task_new(tp, task_wait_for_f, &arg) != 0);
 		unit_fail_if(thread_pool_push_task(p, *tp) != 0);
 	}
 	__atomic_store_n(&arg, 1, __ATOMIC_RELAXED);
-	for (int i = 0; i < count; ++i) {
+    for (int i = 0; i < count; ++i) {
 		t = tasks[i];
 		unit_fail_if(thread_task_join(t, &result) != 0);
 		unit_fail_if(result != &arg);
@@ -113,7 +113,7 @@ test_push(void)
 		unit_fail_if(result != &arg);
 		unit_fail_if(thread_task_delete(t) != 0);
 	}
-	free(tasks);
+    free(tasks);
 	unit_fail_if(thread_pool_delete(p) != 0);
 
 	unit_test_finish();
@@ -193,14 +193,14 @@ test_thread_pool_max_tasks(void)
 	 */
 	int arg = 0;
 	map_reduce_inc(p, tasks, TPOOL_MAX_TASKS, &arg);
-	unit_check(arg == TPOOL_MAX_TASKS, "max tasks are finished");
+    unit_check(arg == TPOOL_MAX_TASKS, "max tasks are finished");
 	arg = 0;
 	/*
 	 * Push a few more to be sure the pool doesn't overflow any counters
 	 * after max.
 	 */
 	map_reduce_inc(p, tasks, more_count, &arg);
-	unit_check(arg == more_count, "a few more tasks are finished");
+    unit_check(arg == more_count, "a few more tasks are finished");
 	/*
 	 * Count > max gives an error.
 	 */

@@ -125,6 +125,7 @@ thread_task_is_running(const struct thread_task *task);
 int
 thread_task_join(struct thread_task *task, void **result);
 
+#define NEED_TIMED_JOIN
 #ifdef NEED_TIMED_JOIN
 
 /**
@@ -156,6 +157,7 @@ thread_task_timed_join(struct thread_task *task, double timeout, void **result);
 int
 thread_task_delete(struct thread_task *task);
 
+#define NEED_DETACH
 #ifdef NEED_DETACH
 
 /**
