@@ -284,8 +284,8 @@ main(void) {
                 }
             } else {
                 exit = execute_out_type(line, &program_result, &a);
-                command_line_delete(line);
             }
+            command_line_delete(line);
         }
     }
     parser_delete(p);
