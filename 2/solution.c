@@ -28,6 +28,7 @@ struct all_pointer{
 
 void node_free(struct tree_node *res) {
     if (res == NULL) return;
+    free(res->expr);
     node_free(res->left);
     node_free(res->right);
     free(res);
