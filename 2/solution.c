@@ -12,7 +12,8 @@
 struct tree_node {
     struct tree_node *left;
     struct tree_node *right;
-    struct expr *expr;
+    struct expr **expr; // store list of command for pipes
+    int cnt;
     int result;
     int exit;
 };
@@ -40,6 +41,12 @@ void all_free(struct all_pointer *a){
 
 int
 command_exec(const struct command *cmd, struct all_pointer *a) {
+    if (strcmp("exit", cmd->exe) == 0) {
+        if(cmd->arg_count > 0){
+            return atoi(cmd->args[0]);
+        }
+        return 0;
+    }
     char **args = malloc(sizeof(char *) * (cmd->arg_count + 2));
     args[0] = cmd->exe;
     for (uint32_t i = 0; i < cmd->arg_count; i++) {
@@ -82,21 +89,32 @@ struct tree_node *construct_tree(struct expr **expr) {
     struct expr *e = *expr;
     while (e != NULL) {
         node = node_init();
-        node->expr = e;
         if (e->type == EXPR_TYPE_COMMAND) {
+            struct expr *tmp = e;
+            int cnt = 1;
+
+            while (tmp->next != NULL && tmp->next->type == EXPR_TYPE_PIPE){
+                cnt++;
+                tmp = tmp->next->next;
+            }
+            node->expr = malloc(sizeof (struct  expr * ) * cnt);
+            node->cnt = cnt;
+            for(int i = 0; i < cnt; i++){
+                node->expr[i] = e;
+                if(i + 1 < cnt) {
+                    e = e->next->next;
+                }
+            }
             if (root == NULL) {
                 root = node;
             } else {
                 root->right = node;
             }
         } else {
-            if(EXPR_TYPE_PIPE == e->type) {
-                if(strcmp(e->next->cmd.exe, "cat") == 0){
-                    e = e->next->next;
-                    node_free(node);
-                    continue;
-                }
-            }
+            node->expr = malloc(sizeof (struct expr *));
+            node->cnt = 1;
+            node->expr[0] = e;
+
             node->left = root;
             root = node;
         }
@@ -105,40 +123,59 @@ struct tree_node *construct_tree(struct expr **expr) {
     return root;
 }
 
-static int execute_node(struct tree_node *node, struct  all_pointer *a) {
-    int pid1, pid2, status;
-    int fd[2];
-    const struct expr *e = node->expr;
+static int  execute_node(struct tree_node *node, struct  all_pointer *a) {
+
+    const struct expr *e = node->expr[0];
     node->exit = 0;
-    if (e->type == EXPR_TYPE_PIPE) {
-        pipe(fd);
+    if (node->cnt > 1) {
+        int pid[node->cnt], status;
+        int fd[node->cnt-1][2];
 
-        pid1 = fork();
-        if (pid1 == 0) {
-            close(fd[0]);
-            dup2(fd[1], STDOUT_FILENO);
-            close(fd[1]);
+        for(int i = 0; i < node->cnt - 1; i++){
+            pipe(fd[i]);
+        }
+        for(int i = 0; i < node->cnt -1; i++){
+//            printf("I-th %d EXPR: %s\n", i, node->expr[i]->cmd.exe);
+            pid[i] =fork();
+            if(pid[i] == 0){
+                dup2(fd[i][1], STDOUT_FILENO);
+                if(i > 0){
+                    dup2(fd[i-1][0], STDIN_FILENO);
+                }
+                for(int j = 0; j < node->cnt-1; j++){
+                    close(fd[j][0]);
+                    close(fd[j][1]);
+                }
 
-            execute_node(node->left, a);
-            all_free(a);
-            exit(0);
+                command_exec(&node->expr[i]->cmd, a);
+                close(fd[i][1]);
+                if(i > 0){
+                    close(fd[i-1][0]);
+                }
+                all_free(a);
+                exit(0);
+            } else {
+                close(fd[i][1]);
+                if(i) close(fd[i-1][0]);
+            }
         }
 
-        pid2 = fork();
-        if (pid2 == 0) {
-            close(fd[1]);
-            dup2(fd[0], STDIN_FILENO);
-            close(fd[0]);
-            node->result = execute_node(node->right, a);
+        pid[node->cnt-1] = fork();
+        if (pid[node->cnt-1] == 0) {
+
+            dup2(fd[node->cnt-2][0], STDIN_FILENO);
+            close(fd[node->cnt-2][0]);
+            node->result = command_exec(&node->expr[node->cnt-1]->cmd, a);
             all_free(a);
             exit(node->result);
         }
+        close(fd[node->cnt-2][0]);
+        for(int i = 0; i < node->cnt; i++) {
+            waitpid(pid[i], &status, WUNTRACED);
+            node->result = WEXITSTATUS(status);
+//            printf("I-th %d ")
+        }
 
-        close(fd[0]);
-        close(fd[1]);
-        waitpid(pid1, NULL, 0);
-        waitpid(pid2, &status, WUNTRACED);
-        node->result = WEXITSTATUS(status);
     } else if (e->type == EXPR_TYPE_AND) {
         node->result = execute_node(node->left, a);
         node->exit = node->left->exit;
@@ -175,6 +212,19 @@ static int execute_node(struct tree_node *node, struct  all_pointer *a) {
     return node->result;
 }
 
+//void show_tree(struct tree_node *t){
+//    if(t == NULL) {
+//        printf("NULL\n");
+//        return ;
+//    }
+//    printf("NODE: %d, \n", t->expr->type);
+//    printf("Left -> ");
+//    show_tree(t->left);
+//    printf("\n");
+//    printf("Right -> ");
+//    show_tree(t->right);
+//}
+
 static int
 execute_out_type(struct command_line *line, int * program_result, struct all_pointer* a) {
 
@@ -197,11 +247,11 @@ execute_out_type(struct command_line *line, int * program_result, struct all_poi
 
     struct tree_node *tree = construct_tree(&line->head);
     (*a).t = tree;
+//    show_tree(tree);
     execute_node(tree, a);
     exit = tree->exit;
     *program_result = tree->result;
     node_free(tree);
-
 
     if (line->out_type == OUTPUT_TYPE_FILE_NEW) {
         close(file);
@@ -213,7 +263,6 @@ execute_out_type(struct command_line *line, int * program_result, struct all_poi
         dup2(io, fileno(stdout));
         close(io);
     }
-
     return exit;
 }
 
