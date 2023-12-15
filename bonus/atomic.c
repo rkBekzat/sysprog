@@ -64,10 +64,11 @@ void* inc(void * arg){
 ll bench(int n, pthread_t * threads, int memory_order){
     struct timespec start, end;
     clock_gettime(CLOCK_MONOTONIC, &start);
-    for(int j = 0; j < n; j++) {
-        pthread_create(&threads[j], NULL, inc, &memory_order);
-        pthread_join(threads[j], NULL);
-    }
+    for(int i = 0; i < n; i++)
+        pthread_create(&threads[i], NULL, inc, &memory_order);
+
+    for(int i = 0; i < n; i++)
+        pthread_join(threads[i], NULL);
 
     clock_gettime(CLOCK_MONOTONIC, &end);
     ll dur = (end.tv_sec - start.tv_sec) * 1000000000LL + (end.tv_nsec - start.tv_nsec);

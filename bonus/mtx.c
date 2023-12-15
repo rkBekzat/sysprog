@@ -67,10 +67,11 @@ double bench(int n, pthread_t *threads){
 
     clock_gettime(CLOCK_MONOTONIC, &start);
 
-    for(int i = 0; i < n; i++) {
+    for(int i = 0; i < n; i++)
         pthread_create(&threads[i], NULL, inc, NULL);
+
+    for(int i = 0; i < n; i++)
         pthread_join(threads[i], NULL);
-    }
     clock_gettime(CLOCK_MONOTONIC, &end);
     ll dur = (end.tv_sec - start.tv_sec) * 1000000000LL + (end.tv_nsec - start.tv_nsec);
     double  per_lock = (double)dur / (n);
