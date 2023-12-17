@@ -49,11 +49,11 @@ void sort(double *a, int l, int r){
 }
 
 double bench(clockid_t id, char* name){
-    struct timespec start, end;
+    struct timespec start, end, tmp;
 
     clock_gettime(CLOCK_MONOTONIC, &start);
     for(int i = 0; i < NUMS; i++){
-        clock_gettime(id, NULL);
+        clock_gettime(id, &tmp);
     }
     clock_gettime(CLOCK_MONOTONIC, &end);
     double dur =  (double )((end.tv_sec - start.tv_sec) * 1000000000LL + (end.tv_nsec - start.tv_nsec)) /NUMS;
